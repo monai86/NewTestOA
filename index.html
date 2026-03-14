@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baan Brownie & Orange Juice</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #fcf8f1; }
+        .thai-gold { color: #c49a6c; }
+        .bg-thai-dark { background-color: #4a3728; }
+        .product-card { transition: all 0.3s ease; border: 2px solid transparent; }
+        .product-card.selected { border-color: #c49a6c; background-color: #fff9f0; transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(196, 154, 108, 0.2); }
+        .btn-gradient { background: linear-gradient(135deg, #4a3728 0%, #2d1e13 100%); }
+        .loader { border-top-color: #c49a6c; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="pb-10">
+    <!-- Header -->
+    <header class="bg-thai-dark text-white p-6 rounded-b-3xl shadow-lg text-center">
+        <h1 class="text-2xl font-bold tracking-wide">เรือนขนมหวาน & น้ำส้ม</h1>
+        <p class="text-sm opacity-80 font-light">เลือกความอร่อยที่คุณต้องการ</p>
+    </header>
+
+    <main class="max-w-md mx-auto px-4 mt-8">
+        <!-- Product Selection -->
+        <div class="grid grid-cols-2 gap-4">
+            <!-- Brownie -->
+            <div id="item-brownie" class="product-card bg-white p-4 rounded-2xl text-center cursor-pointer shadow-sm" onclick="selectItem('บราวนี่รสเข้มข้น', 20, 'item-brownie')">
+                <div class="text-4xl mb-2">🍫</div>
+                <h3 class="font-semibold text-gray-800">บราวนี่</h3>
+                <p class="thai-gold font-bold">20 บาท</p>
+            </div>
+            <!-- Orange Juice -->
+            <div id="item-juice" class="product-card bg-white p-4 rounded-2xl text-center cursor-pointer shadow-sm" onclick="selectItem('น้ำส้มคั้นสด', 25, 'item-juice')">
+                <div class="text-4xl mb-2">🍊</div>
+                <h3 class="font-semibold text-gray-800">น้ำส้มคั้นสด</h3>
+                <p class="thai-gold font-bold">25 บาท</p>
+            </div>
+        </div>
+
+        <!-- Order Summary & Payment (Hidden initially) -->
+        <div id="payment-section" class="mt-8 hidden animate-fade-in">
+            <div class="bg-white rounded-3xl p-6 shadow-md border border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">สรุปรายการสั่งซื้อ</h2>
+                <div class="flex justify-between mb-4">
+                    <span id="summary-name" class="text-gray-600">-</span>
+                    <span id="summary-price" class="font-bold text-gray-800">0 บาท</span>
+                </div>
+
+                <!-- QR Code Area -->
+                <div class="text-center bg-gray-50 rounded-2xl p-4 mb-6">
+                    <p class="text-sm text-gray-500 mb-2">สแกนจ่ายผ่าน PromptPay</p>
+                    <img id="qr-img" src="" alt="PromptPay QR" class="mx-auto rounded-lg shadow-sm w-48 mb-2">
+                    <p class="text-xs text-gray-400">ชื่อบัญชี: *******6245</p>
+                </div>
+
+                <!-- Slip Upload -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">แนบหลักฐานการโอนเงิน</label>
+                    <div class="flex items-center justify-center w-full">
+                        <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-2xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                            <div id="slip-placeholder" class="flex flex-col items-center justify-center pt-5 pb-6">
+                                <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                <p class="text-xs text-gray-500">คลิกเพื่ออัปโหลดรูปสลิป</p>
+                            </div>
+                            <img id="slip-preview" class="hidden h-full w-full object-contain p-2" src="">
+                            <input id="slip-input" type="file" class="hidden" accept="image/*" onchange="previewSlip(event)" />
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <button id="submit-btn" onclick="confirmOrder()" class="btn-gradient w-full text-white py-4 rounded-2xl font-semibold shadow-lg active:scale-95 transition-transform flex justify-center items-center">
+                    <span>ยืนยันการสั่งซื้อ</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentItem = "";
+        let currentAmount = 0;
+        let userName = "Guest";
+        let slipBase64 = "";
+
+        // 1. เริ่มต้นระบบ LIFF
+        liff.init({ liffId: "2009449795" }).then(() => {
+            if (!liff.isLoggedIn()) { liff.login(); }
+            liff.getProfile().then(profile => { userName = profile.displayName; });
+        });
+
+        function selectItem(name, price, elementId) {
+            currentItem = name;
+            currentAmount = price;
+            
+            // Highlight selected card
+            document.querySelectorAll('.product-card').forEach(el => el.classList.remove('selected'));
+            document.getElementById(elementId).classList.add('selected');
+
+            // Update UI
+            document.getElementById('summary-name').innerText = name;
+            document.getElementById('summary-price').innerText = price + " บาท";
+            
+            // Generate QR (PromptPay: 0969866245)
+            let qrUrl = `https://promptpay.io/0969866245/${price}.png`;
+            document.getElementById('qr-img').src = qrUrl;
+            
+            // Show payment section
+            document.getElementById('payment-section').classList.remove('hidden');
+            document.getElementById('payment-section').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function previewSlip(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('slip-placeholder').classList.add('hidden');
+                    document.getElementById('slip-preview').src = e.target.result;
+                    document.getElementById('slip-preview').classList.remove('hidden');
+                    slipBase64 = e.target.result.split(',')[1]; // Get only base64 data
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function confirmOrder() {
+            if (!slipBase64) {
+                alert("กรุณาแนบสลิปการโอนเงินเพื่อยืนยันครับ");
+                return;
+            }
+
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 mr-3"></div> กำลังบันทึก...';
+
+            const scriptUrl = "https://script.google.com/macros/s/AKfycby8A-4jEaYxqnDWFUOSzTtWz1Np1llnrFGf3hMnrL-yp0Zu9V6mGY3OMZh9qRUo_Aa8yw/exec";
+            
+            fetch(scriptUrl, {
+                method: 'POST',
+                body: JSON.stringify({
+                    userName: userName,
+                    items: currentItem,
+                    amount: currentAmount,
+                    slipData: slipBase64
+                })
+            })
+            .then(res => res.json())
+            .then(response => {
+                if(response.result === "success") {
+                    alert("ขอบคุณครับ! ระบบได้รับคำสั่งซื้อและสลิปของคุณแล้ว");
+                    liff.closeWindow();
+                } else {
+                    alert("เกิดข้อผิดพลาด: " + response.message);
+                    btn.disabled = false;
+                    btn.innerText = "ยืนยันการสั่งซื้อ";
+                }
+            })
+            .catch(err => {
+                alert("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้");
+                btn.disabled = false;
+                btn.innerText = "ยืนยันการสั่งซื้อ";
+            });
+        }
+    </script>
+</body>
+</html>
