@@ -1,261 +1,53 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Baan Brownie & Orange Juice</title>
-    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
-    <!-- Animation Library -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+// โค้ดสำหรับ Google Apps Script (Code.gs)
+// อัปเดตเพื่อรองรับข้อมูลที่ละเอียดขึ้นจากระบบตะกร้าสินค้า
+
+function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
+    var data = JSON.parse(e.postData.contents);
     
-    <style>
-        body { 
-            font-family: 'Kanit', sans-serif; 
-            background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);
-            min-height: 100vh;
-        }
-        .thai-gold { color: #b8860b; }
-        .bg-thai-dark { background-color: #3d2b1f; }
-        
-        /* Custom Glassmorphism */
-        .glass-card {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
+    // 1. จัดการรูปสลิป
+    var slipUrl = "ไม่มีแนบมา";
+    if (data.slipData) {
+      // ** อย่าลืมเปลี่ยน Folder ID เป็นของคุณเองนะครับ **
+      var folderId = "13DXUzYtZr6B5E5se0PbFxoGjRdwSdi-Z"; 
+      var folder = DriveApp.getFolderById(folderId);
+      var fileName = "Slip_" + data.receiverName + "_" + new Date().getTime() + ".png";
+      var blob = Utilities.newBlob(Utilities.base64Decode(data.slipData), "image/png", fileName);
+      var file = folder.createFile(blob);
+      slipUrl = file.getUrl();
+    }
+    
+    // 2. บันทึกข้อมูลลงใน Sheet ตามลำดับที่คุณจัดไว้
+    // ลำดับ: 1.วันที่ | 2.ชื่อ LINE | 3.ชื่อผู้รับ | 4.รายการสินค้า | 5.ยอดรวม | 6.สถานที่รับ | 7.เวลาที่รับ | 8.ข้อมูลติดต่อ | 9.สถานะ | 10.ลิงก์สลิป
+    sheet.appendRow([
+      new Date(), 
+      data.userName,
+      data.receiverName,
+      data.items,         // จะเป็นข้อความเช่น "บราวนี่ x2, น้ำส้ม x1"
+      data.amount,        // ยอดรวมราคาสุทธิ
+      data.location,
+      data.time,
+      data.contact,
+      "รอตรวจสอบ",
+      slipUrl
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      "result": "success",
+      "slipUrl": slipUrl
+    })).setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      "result": "error", 
+      "message": error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
 
-        .product-card {
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        .product-card:hover {
-            transform: scale(1.02);
-        }
-        .product-card.selected {
-            border: 3px solid #b8860b;
-            background-color: #fffaf0;
-            transform: scale(1.05);
-            box-shadow: 0 20px 25px -5px rgba(184, 134, 11, 0.2);
-        }
-
-        .input-focus:focus {
-            border-color: #b8860b;
-            box-shadow: 0 0 0 3px rgba(184, 134, 11, 0.1);
-        }
-
-        /* Loading Spinner */
-        .loader {
-            border-top-color: #b8860b;
-            animation: spinner 1s linear infinite;
-        }
-        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* Floating Animation */
-        .floating {
-            animation: floating 3s ease-in-out infinite;
-        }
-        @keyframes floating {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-            100% { transform: translateY(0px); }
-        }
-    </style>
-</head>
-<body class="pb-10 overflow-x-hidden">
-
-    <!-- Hero Header -->
-    <header class="bg-thai-dark text-white p-8 rounded-b-[3rem] shadow-2xl text-center animate__animated animate__fadeInDown">
-        <div class="floating text-5xl mb-3">🏠</div>
-        <h1 class="text-3xl font-bold tracking-tight mb-1">เรือนขนมหวาน & น้ำส้ม</h1>
-        <p class="text-sm opacity-70 font-light tracking-widest uppercase">Thai Modern Homemade</p>
-    </header>
-
-    <main class="max-w-md mx-auto px-5 mt-8">
-        
-        <!-- Section: Selection -->
-        <h2 class="text-gray-800 font-semibold mb-4 ml-1 animate__animated animate__fadeInLeft">เลือกเมนูโปรดของคุณ</h2>
-        <div class="grid grid-cols-2 gap-5 animate__animated animate__fadeInUp">
-            <!-- Brownie -->
-            <div id="item-brownie" class="product-card glass-card p-5 rounded-3xl text-center cursor-pointer shadow-lg" onclick="selectItem('บราวนี่รสเข้มข้น', 20, 'item-brownie')">
-                <div class="text-5xl mb-3">🍫</div>
-                <h3 class="font-bold text-gray-800 text-lg">บราวนี่</h3>
-                <p class="thai-gold font-bold text-xl">20.-</p>
-            </div>
-            <!-- Orange Juice -->
-            <div id="item-juice" class="product-card glass-card p-5 rounded-3xl text-center cursor-pointer shadow-lg" onclick="selectItem('น้ำส้มคั้นสด', 25, 'item-juice')">
-                <div class="text-5xl mb-3">🍊</div>
-                <h3 class="font-bold text-gray-800 text-lg">น้ำส้มสด</h3>
-                <p class="thai-gold font-bold text-xl">25.-</p>
-            </div>
-        </div>
-
-        <!-- Section: Order Details (Initially Hidden) -->
-        <div id="payment-section" class="mt-10 hidden animate__animated animate__fadeInUp">
-            <div class="glass-card rounded-[2.5rem] p-8 shadow-2xl border border-white">
-                <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
-                    <span class="mr-2">📝</span> รายละเอียดการสั่งซื้อ
-                </h2>
-
-                <!-- Summary Info -->
-                <div class="flex justify-between items-center mb-8 bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                    <span id="summary-name" class="text-gray-700 font-medium">โปรดเลือกสินค้า</span>
-                    <span id="summary-price" class="text-2xl font-bold thai-gold">0.-</span>
-                </div>
-
-                <!-- NEW: Customer Info Fields -->
-                <div class="space-y-5 mb-8">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">ชื่อผู้รับสินค้า</label>
-                        <input type="text" id="receiver-name" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none input-focus transition-all" placeholder="ระบุชื่อเพื่อเรียกรับ">
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-4">
-    <div class="col-span-2">
-        <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">สถานที่รับ</label>
-        <input type="text" id="pickup-location" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none input-focus transition-all" placeholder="ตึก/ห้อง">
-    </div>
-    <div>
-        <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1 text-center">เวลา</label>
-        <input type="time" id="pickup-time" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none input-focus transition-all text-center">
-    </div>
-</div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">เบอร์โทรศัพท์ติดต่อ</label>
-                        <input type="tel" id="contact-info" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none input-focus transition-all" placeholder="0xx-xxx-xxxx">
-                    </div>
-                </div>
-
-                <!-- Payment Area -->
-                <div class="text-center bg-white rounded-[2rem] p-6 mb-8 shadow-inner border border-gray-100">
-                    <p class="text-sm font-bold text-gray-400 uppercase mb-4 tracking-tighter">Scan to Pay via PromptPay</p>
-                    <div class="relative inline-block">
-                        <img id="qr-img" src="" alt="PromptPay" class="mx-auto rounded-2xl w-56 mb-4 animate__animated animate__zoomIn">
-                        <div class="absolute -bottom-2 -right-2 bg-thai-dark text-white text-[10px] px-2 py-1 rounded-full shadow-lg">Official QR</div>
-                    </div>
-                    <p class="text-xs text-gray-400 mt-2">เลขบัญชี: 096-986-6245</p>
-                </div>
-
-                <!-- Slip Upload -->
-                <div class="mb-8">
-                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 ml-1 text-center">อัปโหลดหลักฐานการโอน</label>
-                    <div class="relative group">
-                        <label class="flex flex-col items-center justify-center w-full h-44 border-2 border-gray-200 border-dashed rounded-[2rem] cursor-pointer bg-gray-50 hover:bg-amber-50 hover:border-amber-200 transition-all overflow-hidden">
-                            <div id="slip-placeholder" class="flex flex-col items-center justify-center">
-                                <span class="text-4xl mb-2">📸</span>
-                                <p class="text-xs text-gray-400">แตะเพื่อเลือกรูปสลิป</p>
-                            </div>
-                            <img id="slip-preview" class="hidden h-full w-full object-cover" src="">
-                            <input id="slip-input" type="file" class="hidden" accept="image/*" onchange="previewSlip(event)" />
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Submit Button -->
-                <button id="submit-btn" onclick="confirmOrder()" class="w-full bg-thai-dark text-white py-5 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl active:scale-95 transition-all flex justify-center items-center">
-                    <span>ส่งคำสั่งซื้อทันที</span>
-                </button>
-                <p class="text-center text-[10px] text-gray-300 mt-4 font-light">ข้อมูลของคุณจะถูกบันทึกลงระบบ Google Gemini โดยตรง</p>
-            </div>
-        </div>
-    </main>
-
-    <script>
-        let currentItem = "";
-        let currentAmount = 0;
-        let userName = "Guest";
-        let slipBase64 = "";
-
-        // 1. Initial LIFF
-        liff.init({ liffId: "2009449795" }).then(() => {
-            if (!liff.isLoggedIn()) { liff.login(); }
-            liff.getProfile().then(profile => { userName = profile.displayName; });
-        });
-
-        function selectItem(name, price, elementId) {
-            currentItem = name;
-            currentAmount = price;
-            
-            // UI Update
-            document.querySelectorAll('.product-card').forEach(el => el.classList.remove('selected'));
-            document.getElementById(elementId).classList.add('selected');
-
-            document.getElementById('summary-name').innerText = name;
-            document.getElementById('summary-price').innerText = price + ".-";
-            
-            // Generate QR
-            let qrUrl = `https://promptpay.io/0969866245/${price}.png`;
-            document.getElementById('qr-img').src = qrUrl;
-            
-            // Show Section with Animation
-            const paySec = document.getElementById('payment-section');
-            paySec.classList.remove('hidden');
-            paySec.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function previewSlip(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('slip-placeholder').classList.add('hidden');
-                    const prev = document.getElementById('slip-preview');
-                    prev.src = e.target.result;
-                    prev.classList.remove('hidden');
-                    slipBase64 = e.target.result.split(',')[1];
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        function confirmOrder() {
-            const receiverName = document.getElementById('receiver-name').value;
-            const location = document.getElementById('pickup-location').value;
-            const time = document.getElementById('pickup-time').value;
-            const contact = document.getElementById('contact-info').value;
-
-            if (!receiverName || !location || !time || !contact || !slipBase64) {
-                alert("กรุณากรอกข้อมูลผู้รับและแนบสลิปให้ครบถ้วนนะครับ 🙏");
-                return;
-            }
-
-            const btn = document.getElementById('submit-btn');
-            btn.disabled = true;
-            btn.innerHTML = '<div class="loader rounded-full border-2 h-5 w-5 mr-3"></div> กำลังส่งข้อมูล...';
-
-            const scriptUrl = "https://script.google.com/macros/s/AKfycbwOHKFRnqQW5ePnlFFOOnMs__G1B9XfynCqaMb9WP9oRp1_u3aQJF7SHI7NxPYQX18NsA/exec";
-            
-            fetch(scriptUrl, {
-                method: 'POST',
-                body: JSON.stringify({
-                    userName: userName,
-                    receiverName: receiverName,
-                    location: location,
-                    time: time,
-                    contact: contact,
-                    items: currentItem,
-                    amount: currentAmount,
-                    slipData: slipBase64
-                })
-            })
-            .then(res => res.json())
-            .then(response => {
-                if(response.result === "success") {
-                    // Success Animation/Feedback
-                    alert("ขอบคุณครับ! ออเดอร์ของคุณถูกส่งเข้าระบบเรียบร้อยแล้ว ✨");
-                    liff.closeWindow();
-                } else {
-                    alert("ขออภัย: " + response.message);
-                    btn.disabled = false;
-                    btn.innerText = "ส่งคำสั่งซื้ออีกครั้ง";
-                }
-            })
-            .catch(err => {
-                alert("การเชื่อมต่อขัดข้อง โปรดลองอีกครั้ง");
-                btn.disabled = false;
-                btn.innerText = "ส่งคำสั่งซื้ออีกครั้ง";
-            });
-        }
-    </script>
-</body>
-</html>
+// ฟังก์ชันสำหรับขอสิทธิ์เข้าถึง (รันครั้งเดียวตอนแก้โค้ดใหม่)
+function triggerPermission() {
+  DriveApp.getStorageUsed();
+  DriveApp.createFile("test.txt", "hello");
+}
